@@ -96,7 +96,7 @@ static evquick_timer_instance *evquick_get_min_timer(void) {
     evquick_timer_instance *first, *min = NULL;
     while (c) {
         first = heap_first(c->timers);
-        if ((!min || first->expire < min->expire) && first)
+        if (first && (!min || first->expire < min->expire))
             min = first;
         c = c->next;
     }
@@ -434,6 +434,8 @@ static void timer_check(CTX ctx)
             free(t.ev_timer);
         }
         first = heap_first(ctx->timers);
+        if (first && (!min || first->expire < min->expire))
+            min = first;
     }
     
     min = evquick_get_min_timer();
