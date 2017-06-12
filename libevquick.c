@@ -29,6 +29,7 @@ static struct evquick_ctx *ctx;
 #   define ctx_add(c) do{}while(0)
 #   define ctx_del(c) do{}while(0)
 #   define ctx_signal_dispatch() do{}while(0)
+#   define evquick_get_min_timer() (NULL)
 #endif
 
 
@@ -89,6 +90,18 @@ struct evquick_ctx
 #ifdef EVQUICK_PTHREAD
 static pthread_mutex_t ctx_list_mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct evquick_ctx *CTX_LIST = NULL;
+
+static evquick_timer_instance *evquick_get_min_timer(void) {
+    struct evquick_ctx *c = CTX_LIST;
+    evquick_timer_instance *first, *min = NULL;
+    while (c) {
+        first = heap_first(c->timers);
+        if (!min || first->expire < min->expire)
+            min = first;
+        c = c->next;
+    }
+    return min;
+}
 
 static void ctx_add(struct evquick_ctx *c) {
     pthread_mutex_lock(&ctx_list_mutex);
@@ -210,7 +223,7 @@ void evquick_delevent(evquick_event *e)
 static void timer_trigger(CTX ctx, evquick_timer *t, unsigned long long now,
     unsigned long long expire)
 {
-    evquick_timer_instance tev, *first;
+    evquick_timer_instance tev, *first, *min;
     if (!ctx)
         return ;
     tev.ev_timer = t;
@@ -218,18 +231,20 @@ static void timer_trigger(CTX ctx, evquick_timer *t, unsigned long long now,
     t->id = heap_insert(ctx->timers, &tev);
     if (t->id < 0)
         return;
-    first = heap_first(ctx->timers);
-    if (first) {
+    min = evquick_get_min_timer();
+    if (!min)
+        min = heap_first(ctx->timers);
+    if (min) {
         unsigned long long interval;
-        if (now >= first->expire) {
+        if (now >= min->expire) {
             ualarm(1000, 0);
             return;
         }
-        interval = first->expire - now;
+        interval = min->expire - now;
         if (interval >= 1000)
             alarm(interval / 1000);
         else
-            ualarm((useconds_t)(1000 * (first->expire - now)), 0);
+            ualarm((useconds_t)(1000 * (min->expire - now)), 0);
     }
 }
 
@@ -315,6 +330,8 @@ static void serve_event(CTX ctx, int n)
 }
 
 
+
+
 /*** PUBLIC API ***/
 #ifdef EVQUICK_PTHREAD
 evquick_timer *evquick_addtimer(CTX ctx,
@@ -390,15 +407,6 @@ static void timer_check(CTX ctx)
     evquick_timer_instance t, *first, *min = NULL;
     unsigned long long now = gettimeofdayms();
 
-#ifdef EVQUICK_PTHREAD
-    struct evquick_ctx *c = CTX_LIST;
-    while (c) {
-        first = heap_first(ctx->timers);
-        if (!min || first->expire < min->expire)
-            min = first;
-        c = c->next;
-    }
-#endif
     first = heap_first(ctx->timers);
     while(first && (first->expire <= now)) {
         heap_peek(ctx->timers, &t);
@@ -427,6 +435,8 @@ static void timer_check(CTX ctx)
         }
         first = heap_first(ctx->timers);
     }
+    
+    min = evquick_get_min_timer();
     if (!min)
         min = first;
     if (min) {
