@@ -1,6 +1,6 @@
-all: test_heap test_evquick test_timers test_timers2 test_multiple_events test_evquick_pthread test_timers3
+all: test_heap test_evquick test_timers test_timers2 test_multiple_events test_evquick_pthread test_timers3 test_timers_pthread
 clean:
-	rm -f test_heap test_evquick test_timers tags core test_multiple_events test_evquick_pthread test_timers2 test_timers3 ../*.o ../*.a
+	rm -f test_heap test_evquick test_timers tags core test_multiple_events test_evquick_pthread test_timers2 test_timers3 test_timers_pthread ../*.o ../*.a
 test_heap:
 	gcc -o test_heap test_heap.c -I..
 test_evquick:
@@ -18,3 +18,6 @@ test_multiple_events:
 
 test_evquick_pthread:
 	gcc -o $@ test_evquick_pthread.c ../libevquick.c -pthread -I.. -g -ggdb -DEVQUICK_PTHREAD
+
+test_timers_pthread:
+	gcc -o $@ test_timers_pthread.c ../libevquick.c -pthread -I.. -g -ggdb -DEVQUICK_PTHREAD
