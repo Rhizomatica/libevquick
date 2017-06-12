@@ -387,10 +387,18 @@ CTX evquick_init(void)
 
 static void timer_check(CTX ctx)
 {
-    evquick_timer_instance t, *first;
+    evquick_timer_instance t, *first, *min = NULL;
     unsigned long long now = gettimeofdayms();
-    if (!ctx)
-        return ;
+
+#ifdef EVQUICK_PTHREAD
+    struct evquick_ctx *c = CTX_LIST;
+    while (c) {
+        first = heap_first(ctx->timers);
+        if (!min || first->expire < min->expire)
+            min = first;
+        c = c->next;
+    }
+#endif
     first = heap_first(ctx->timers);
     while(first && (first->expire <= now)) {
         heap_peek(ctx->timers, &t);
@@ -419,12 +427,16 @@ static void timer_check(CTX ctx)
         }
         first = heap_first(ctx->timers);
     }
-    if(first) {
-        unsigned long long interval = first->expire - now;
+    if (!min)
+        min = first;
+    if (min) {
+        unsigned long long interval = 1;
+        if (min->expire > now)
+            interval = min->expire - now;
         if (interval >= 1000)
             alarm(interval / 1000);
         else
-            ualarm((useconds_t) (1000 * (first->expire - now)), 0);
+            ualarm((useconds_t) (1000 * (min->expire - now)), 0);
     }
 }
 
