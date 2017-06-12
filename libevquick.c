@@ -96,7 +96,7 @@ static evquick_timer_instance *evquick_get_min_timer(void) {
     evquick_timer_instance *first, *min = NULL;
     while (c) {
         first = heap_first(c->timers);
-        if (!min || first->expire < min->expire)
+        if ((!min || first->expire < min->expire) && first)
             min = first;
         c = c->next;
     }
