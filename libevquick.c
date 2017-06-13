@@ -147,13 +147,11 @@ static void ctx_signal_dispatch(void)
 
 static void sig_alrm_handler(int signo)
 {
-    char c = 't';
-
-
     if (signo == SIGALRM) {
         ctx_signal_dispatch();
 #ifndef EVQUICK_PTHREAD
         if (ctx) {
+            char c = 't';
             if (write(ctx->time_machine[1], &c, 1) < 0)
                 timer_on(ctx, 1);
         }
@@ -230,7 +228,7 @@ static void timer_trigger(CTX ctx, evquick_timer *t, unsigned long long now,
     unsigned long long expire)
 {
     unsigned long long interval;
-    evquick_timer_instance tev, *first, *min;
+    evquick_timer_instance tev, *first;
     if (!ctx)
         return ;
     tev.ev_timer = t;
