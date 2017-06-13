@@ -15,6 +15,7 @@
 #include <sys/types.h>
 #include "heap.h"
 #include "libevquick.h"
+#include <time.h>
 #include <fcntl.h>
 #include <assert.h>
 
@@ -31,6 +32,22 @@ static struct evquick_ctx *ctx;
 #   define ctx_signal_dispatch() do{}while(0)
 #   define evquick_get_min_timer() (NULL)
 #endif
+
+static __thread timer_t TimerId = 0;
+
+static void timer_new(void)
+{
+    struct sigevent evp = {};
+    evp.sigev_notify = SIGEV_SIGNAL;
+    evp.sigev_signo = SIGALRM;
+    timer_create(CLOCK_REALTIME, 0, &TimerId);
+}
+
+static void timer_on(unsigned long long interval)
+{
+    const struct itimerspec ival = { {0, 0} , {interval / 1000, (interval % 1000) * (1000 * 1000) }};
+    int ret = timer_settime(TimerId, 0, &ival, NULL);
+}
 
 
 struct evquick_event
@@ -88,20 +105,8 @@ struct evquick_ctx
 };
 
 #ifdef EVQUICK_PTHREAD
-static pthread_mutex_t ctx_list_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t ctx_list_mutex;
 static struct evquick_ctx *CTX_LIST = NULL;
-
-static evquick_timer_instance *evquick_get_min_timer(void) {
-    struct evquick_ctx *c = CTX_LIST;
-    evquick_timer_instance *first, *min = NULL;
-    while (c) {
-        first = heap_first(c->timers);
-        if (first && (!min || first->expire < min->expire))
-            min = first;
-        c = c->next;
-    }
-    return min;
-}
 
 static void ctx_add(struct evquick_ctx *c) {
     pthread_mutex_lock(&ctx_list_mutex);
@@ -130,9 +135,10 @@ static void ctx_del(struct evquick_ctx *delme) {
 static void ctx_signal_dispatch(void)
 {
     struct evquick_ctx *c = CTX_LIST;
+    char chr = 't';
     while (c) {
-        if (write(c->time_machine[1], &c, 1) < 0) {
-            ualarm(1000, 0);
+        if (write(c->time_machine[1], &chr, 1) < 0) {
+            timer_on(1);
         }
         c = c->next;
     }
@@ -144,12 +150,13 @@ static void sig_alrm_handler(int signo)
 {
     char c = 't';
 
+
     if (signo == SIGALRM) {
         ctx_signal_dispatch();
 #ifndef EVQUICK_PTHREAD
         if (ctx) {
             if (write(ctx->time_machine[1], &c, 1) < 0)
-                ualarm(1000, 0);
+                timer_on(1);
         }
 #endif
     }
@@ -223,28 +230,20 @@ void evquick_delevent(evquick_event *e)
 static void timer_trigger(CTX ctx, evquick_timer *t, unsigned long long now,
     unsigned long long expire)
 {
+    unsigned long long interval;
     evquick_timer_instance tev, *first, *min;
     if (!ctx)
         return ;
     tev.ev_timer = t;
     tev.expire = expire;
     t->id = heap_insert(ctx->timers, &tev);
-    if (t->id < 0)
-        return;
-    min = evquick_get_min_timer();
-    if (!min)
-        min = heap_first(ctx->timers);
-    if (min) {
-        unsigned long long interval;
-        if (now >= min->expire) {
-            ualarm(1000, 0);
-            return;
-        }
-        interval = min->expire - now;
-        if (interval >= 1000)
-            alarm(interval / 1000);
+    first = heap_first(ctx->timers);
+    if (first) {
+        if (first->expire <= now)
+            interval = 1;
         else
-            ualarm((useconds_t)(1000 * (min->expire - now)), 0);
+            interval = first->expire - now;
+        timer_on(interval);
     }
 }
 
@@ -375,8 +374,10 @@ CTX evquick_init(void)
 {
     int yes = 1;
     struct sigaction act;
+    timer_new();
 #ifdef EVQUICK_PTHREAD
     CTX ctx;
+    pthread_mutex_init(&ctx_list_mutex, NULL);
 #endif
     ctx = calloc(1, sizeof(struct evquick_ctx));
     if (!ctx)
@@ -392,6 +393,7 @@ CTX evquick_init(void)
     ctx->changed = 1;
     memset(&act, 0, sizeof(act));
     act.sa_handler = sig_alrm_handler;
+    act.sa_flags = SA_NODEFER;
     if (sigaction(SIGALRM, &act, NULL) < 0) {
         perror("Setting alarm signal");
         return NULL;
@@ -404,7 +406,7 @@ CTX evquick_init(void)
 
 static void timer_check(CTX ctx)
 {
-    evquick_timer_instance t, *first, *min = NULL;
+    evquick_timer_instance t, *first;
     unsigned long long now = gettimeofdayms();
 
     first = heap_first(ctx->timers);
@@ -434,21 +436,12 @@ static void timer_check(CTX ctx)
             free(t.ev_timer);
         }
         first = heap_first(ctx->timers);
-        if (first && (!min || first->expire < min->expire))
-            min = first;
     }
-    
-    min = evquick_get_min_timer();
-    if (!min)
-        min = first;
-    if (min) {
+    if (first) {
         unsigned long long interval = 1;
-        if (min->expire > now)
-            interval = min->expire - now;
-        if (interval >= 1000)
-            alarm(interval / 1000);
-        else
-            ualarm((useconds_t) (1000 * (min->expire - now)), 0);
+        if (first->expire > now)
+            interval = first->expire - now;
+        timer_on(interval);
     }
 }
 
@@ -514,5 +507,5 @@ void evquick_fini(void)
 #endif
 {
     ctx->giveup = 1;
-    ualarm(1000, 0);
+    timer_on(1000);
 }

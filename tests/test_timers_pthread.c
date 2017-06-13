@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <time.h>
 
 static int counter = 0;
 static int counter1 = 0;
@@ -45,7 +46,7 @@ int main(void)
 	ctx = evquick_init();
     if (!ctx)
 		exit(2);
-    evquick_addtimer(ctx, 8, EVQUICK_EV_RETRIGGER, timer_cb, NULL);
+    evquick_addtimer(ctx, 1, EVQUICK_EV_RETRIGGER, timer_cb, NULL);
     evquick_addtimer(ctx, 200, 0, timer_long_cb, NULL);
 	evquick_loop(ctx);
 	exit(0);
