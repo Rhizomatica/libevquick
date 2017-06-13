@@ -33,22 +33,6 @@ static struct evquick_ctx *ctx;
 #   define evquick_get_min_timer() (NULL)
 #endif
 
-static __thread timer_t TimerId = 0;
-
-static void timer_new(void)
-{
-    struct sigevent evp = {};
-    evp.sigev_notify = SIGEV_SIGNAL;
-    evp.sigev_signo = SIGALRM;
-    timer_create(CLOCK_REALTIME, 0, &TimerId);
-}
-
-static void timer_on(unsigned long long interval)
-{
-    const struct itimerspec ival = { {0, 0} , {interval / 1000, (interval % 1000) * (1000 * 1000) }};
-    int ret = timer_settime(TimerId, 0, &ival, NULL);
-}
-
 
 struct evquick_event
 {
@@ -99,10 +83,25 @@ struct evquick_ctx
     struct evquick_event *_array;
     heap_evquick_timer_instance *timers;
     int giveup;
+    timer_t timer_id;
 #ifdef EVQUICK_PTHREAD
     struct evquick_ctx *next;
 #endif
 };
+
+static void timer_new(CTX ctx)
+{
+    struct sigevent evp = {};
+    evp.sigev_notify = SIGEV_SIGNAL;
+    evp.sigev_signo = SIGALRM;
+    timer_create(CLOCK_REALTIME, &evp, &ctx->timer_id);
+}
+
+static void timer_on(CTX ctx, unsigned long long interval)
+{
+    const struct itimerspec ival = { {0, 0} , {interval / 1000, (interval % 1000) * (1000 * 1000) }};
+    timer_settime(ctx->timer_id, 0, &ival, NULL);
+}
 
 #ifdef EVQUICK_PTHREAD
 static pthread_mutex_t ctx_list_mutex;
@@ -138,7 +137,7 @@ static void ctx_signal_dispatch(void)
     char chr = 't';
     while (c) {
         if (write(c->time_machine[1], &chr, 1) < 0) {
-            timer_on(1);
+            timer_on(c, 1);
         }
         c = c->next;
     }
@@ -156,7 +155,7 @@ static void sig_alrm_handler(int signo)
 #ifndef EVQUICK_PTHREAD
         if (ctx) {
             if (write(ctx->time_machine[1], &c, 1) < 0)
-                timer_on(1);
+                timer_on(ctx, 1);
         }
 #endif
     }
@@ -243,7 +242,7 @@ static void timer_trigger(CTX ctx, evquick_timer *t, unsigned long long now,
             interval = 1;
         else
             interval = first->expire - now;
-        timer_on(interval);
+        timer_on(ctx, interval);
     }
 }
 
@@ -374,7 +373,6 @@ CTX evquick_init(void)
 {
     int yes = 1;
     struct sigaction act;
-    timer_new();
 #ifdef EVQUICK_PTHREAD
     CTX ctx;
     pthread_mutex_init(&ctx_list_mutex, NULL);
@@ -399,6 +397,7 @@ CTX evquick_init(void)
         return NULL;
     }
     ctx_add(ctx);
+    timer_new(ctx);
     return ctx;
 }
 
@@ -441,7 +440,7 @@ static void timer_check(CTX ctx)
         unsigned long long interval = 1;
         if (first->expire > now)
             interval = first->expire - now;
-        timer_on(interval);
+        timer_on(ctx, interval);
     }
 }
 
@@ -507,5 +506,5 @@ void evquick_fini(void)
 #endif
 {
     ctx->giveup = 1;
-    timer_on(1000);
+    timer_on(ctx, 1000);
 }
