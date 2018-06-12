@@ -115,7 +115,7 @@ static void ctx_add(struct evquick_ctx *c) {
 }
 
 static void ctx_del(struct evquick_ctx *delme) {
-    struct evquick_ctx *p = NULL, *c  = CTX_LIST; 
+    struct evquick_ctx *p = NULL, *c  = CTX_LIST;
     while(c) {
         if (c == delme) {
             pthread_mutex_lock(&ctx_list_mutex);
@@ -216,6 +216,7 @@ void evquick_delevent(evquick_event *e)
              else
                 prev->next = e->next;
             free(e);
+            break;
         }
         prev = cur;
         cur = cur->next;
