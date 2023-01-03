@@ -23,6 +23,10 @@ For a more detailed explaination of the API, see `libevquick.h`
 To link with your application, simply add `libevquick.c` to your project and put `libevquick.h` 
 in your include path.
 
+### Disclaimer
 
+This is just a clone of the official repository, located at:
+
+https://gitlab.com/danielinux/libevquick
 
 
